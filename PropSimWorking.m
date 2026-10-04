@@ -68,14 +68,14 @@ P_f    = P_ox - dP_fric;
 
 % Fuel temperature and dynamic viscosity
 T_f  = props('T','D',rho_f,'P',P_f,'Ethanol'); %matlab function 7
-mu_f = props('V','T',T_f,'P',P_f,'Ethanol');
+%mu_f = props('V','T',T_f,'P',P_f,'Ethanol');
 
 % Oxidizer viscosity still needs REFPROP/team data
-mu_ox = NaN;   % TODO: replace with N2O viscosity source
+%mu_ox = NaN;   % TODO: replace with N2O viscosity source
 
 % ---- engine ------------------------------------
 [m_dot_ox, m_dot_f, Pc, F, OF, Isp] = ...
-    engine_solver(P_ox, P_f, rho_ox, rho_f, mu_f);
+    engine_solver(P_ox, P_f, rho_ox, rho_f);
 
         % ---- energy-balance terms ----------------------------------------
                            
