@@ -1,0 +1,269 @@
+%% propulsion_sim.m
+% Plain-MATLAB time-stepping version of propulsion.slx.
+% Every Simulink scope becomes one tile in the figure at the bottom.
+%
+% Requires: Optimization Toolbox (fsolve) and MATLAB's Python interface with
+% CoolProp installed (py.CoolProp.CoolProp.PropsSI), same as the Simulink model.
+%
+% Run as a script (local functions are at the end of the file).
+
+clear; clc; close all;
+
+%% ---------------- Settings ----------------------------------------------
+dt   = 0.01;     % [s] fixed step (Simulink used a variable-step solver)
+tEnd = 10;       % [s] Simulink default stop time (none was saved in the model)
+
+% 'energy'    : P_ox from the oxidizer's internal energy + volume (+ mass)
+% 'saturated' : P_ox = saturation pressure at T_ox
+% (MATLAB Function4 is EMPTY in the .slx, so this is an assumption - see calc_P_ox)
+P_ox_model = 'energy';
+
+%% ---------------- Constants / initial conditions (from the .slx) ---------
+T_amb      = 300;       % [K]      Constant1 (T_ambient)
+rho_f      = 794;       % [kg/m^3] rho_f constant (fuel density)
+m_ox0      = 33.8916;   % [kg]     Discrete-Time Integrator  initial condition (oxidizer mass)
+m_f0       = 9.678;     % [kg]     Discrete-Time Integrator1 initial condition (fuel mass)
+fric_power = 1;         % [W]      "Constant"  - friction loss in piston (Simulink default, none saved)
+dP_fric    = 1;         % [Pa]     "Constant3" - fuel-side pressure loss (Simulink default, none saved)
+
+% "Constant2" = initial oxidizer volume [m^3]. It is left at Simulink's default of 1 m^3
+% in the file, which makes rho = 33.9 kg/m^3 and CoolProp fails. Here it is derived so that
+% it is consistent with m_ox0 at T_amb. Overwrite with your real tank volume if you like.
+v_ox0 = m_ox0 / props('D','T',T_amb,'Q',0,'N2O');
+
+% Initial oxidizer mass / internal energy (MATLAB Function5 and Function3)
+m_ox_initial = v_ox0 * props('D','T',T_amb,'Q',0,'N2O');
+u_ox_initial = m_ox_initial * props('U','T',T_amb,'Q',0,'N2O');   % [J]
+
+%% ---------------- Preallocate logs ---------------------------------------
+N = floor(tEnd/dt) + 1;
+L.t = zeros(1,N);        L.T_ox = zeros(1,N);     L.P_ox = zeros(1,N);
+L.P_f = zeros(1,N);      L.m_dot_ox = zeros(1,N); L.m_dot_f = zeros(1,N);
+L.Pc = zeros(1,N);       L.F = zeros(1,N);        L.OF = zeros(1,N);
+L.Isp = zeros(1,N);      L.m_ox = zeros(1,N);     L.m_f = zeros(1,N);
+
+%% ---------------- States --------------------------------------------------
+m_ox       = m_ox0;   % Discrete-Time Integrator  (state)
+m_f        = m_f0;    % Discrete-Time Integrator1 (state)
+U_removed  = 0;       % Integrator   : energy removed from oxidizer [J]
+M_fuel_out = 0;       % Integrator1  : cumulative fuel mass out [kg]
+
+%% ---------------- Main loop ----------------------------------------------
+nLogged = 0;
+for k = 1:N
+    t = (k-1)*dt;
+
+    try
+        % ---- algebraic chain (same order as the block diagram) -----------
+        v_ox = v_ox0 + M_fuel_out/rho_f;        % Divide (m_fuel_out/rho_f) + Sum3
+        u_ox = u_ox_initial - U_removed;        % Sum2 (u_ox_initial - integral)
+
+       T_ox   = props('T','D',m_ox/v_ox,'Q',0,'N2O');
+rho_ox = props('D','T',T_ox,'Q',0,'N2O');
+P_ox   = calc_P_ox(P_ox_model, u_ox, v_ox, m_ox, T_ox);
+P_f    = P_ox - dP_fric;
+
+% Dynamic viscosity for oxidizer
+%mu_ox = props('V','T',T_ox,'Q',0,'N2O');
+
+% Fuel temperature and dynamic viscosity
+T_f  = props('T','D',rho_f,'P',P_f,'Ethanol'); %matlab function 7
+mu_f = props('V','T',T_f,'P',P_f,'Ethanol');
+
+% Oxidizer viscosity still needs REFPROP/team data
+mu_ox = NaN;   % TODO: replace with N2O viscosity source
+
+% ---- engine ------------------------------------
+[m_dot_ox, m_dot_f, Pc, F, OF, Isp] = ...
+    engine_solver(P_ox, P_f, rho_ox, rho_f, mu_f);
+
+        % ---- energy-balance terms ----------------------------------------
+                           
+        w_piston = (m_dot_f / props('D','T',T_f,'P',P_f,'Ethanol')) ...
+                   * props('P','T',T_ox,'Q',0,'N2O');                           % MATLAB Function1
+        u_out    = m_dot_ox * props('U','T',T_ox,'Q',0,'N2O');                  % MATLAB Function2
+    catch err
+        warning('Stopped at t = %.3f s: %s', t, err.message);
+        break
+    end
+
+    % ---- log (this is what the scopes display) ---------------------------
+    nLogged = k;
+    L.t(k) = t;          L.T_ox(k) = T_ox;        L.P_ox(k) = P_ox;
+    L.P_f(k) = P_f;      L.m_dot_ox(k) = m_dot_ox; L.m_dot_f(k) = m_dot_f;
+    L.Pc(k) = Pc;        L.F(k) = F;              L.OF(k) = OF;
+    L.Isp(k) = Isp;      L.m_ox(k) = m_ox;        L.m_f(k) = m_f;
+
+    % ---- state update (forward Euler, same as Discrete-Time Integrator) --
+    U_removed  = U_removed  + dt*(w_piston + fric_power + u_out);  % Sum, Sum1 -> Integrator
+    M_fuel_out = M_fuel_out + dt*m_dot_f;                          % Integrator1
+    m_ox       = m_ox - dt*m_dot_ox;                               % Gain(-1) -> DiscInt
+    m_f        = m_f  - dt*m_dot_f;                                % Gain1(-1) -> DiscInt1
+
+    if m_ox <= 0 || m_f <= 0
+        warning('A propellant tank emptied at t = %.3f s - stopping.', t + dt);
+        break
+    end
+end
+
+% trim unused preallocated samples
+for fn = fieldnames(L)'
+    L.(fn{1}) = L.(fn{1})(1:nLogged);
+end
+
+%% ---------------- Plots (one tile per Simulink scope) --------------------
+figure('Name','Propulsion scopes','Color','w','Position',[100 100 1100 800]);
+tl = tiledlayout(3,2,'TileSpacing','compact','Padding','compact');
+title(tl,'propulsion.slx - scope outputs');
+
+scopePlot(tl, L.t, L.Pc/1e6,  'Chamber Pressure',     'P_c [MPa]');
+scopePlot(tl, L.t, L.F,       'Thrust',               'F [N]');
+scopePlot(tl, L.t, L.OF,      'Oxidizer Fuel Ratio',  'O/F [-]');
+scopePlot(tl, L.t, L.Isp,     'Specific Impulse',     'I_{sp} [s]');
+scopePlot(tl, L.t, L.P_f/1e6, 'Scope (P_{fuel})',     'P_{fuel} [MPa]');
+scopePlot(tl, L.t, L.P_ox/1e6,'Scope1 (P_{ox})',      'P_{ox} [MPa]');
+
+%% ======================= Local functions ==================================
+function scopePlot(tl, t, y, ttl, ylab)
+    nexttile(tl);
+    plot(t, y, 'LineWidth', 1.5);
+    grid on; title(ttl); xlabel('Time [s]'); ylabel(ylab);
+end
+
+function y = props(varargin)
+    % thin wrapper: py.CoolProp.CoolProp.PropsSI -> double
+    y = double(py.CoolProp.CoolProp.PropsSI(varargin{:}));
+end
+
+function P_ox = calc_P_ox(model, u_ox, v_ox, m_ox, T_ox)
+    % MATLAB Function4 (fcn(u_ox, v_ox) -> P_ox) has no body in the .slx.
+    % Two reasonable fills; pick with P_ox_model at the top of the script.
+    switch model
+        case 'energy'
+            % state from specific internal energy and bulk density (two-phase capable).
+            % needs m_ox in addition to u_ox, v_ox to get specific quantities.
+            P_ox = props('P','Umass',u_ox/m_ox,'Dmass',m_ox/v_ox,'N2O');
+        case 'saturated'
+            P_ox = props('P','T',T_ox,'Q',0,'N2O');
+        otherwise
+            error('Unknown P_ox_model "%s"', model);
+    end
+end
+
+function [m_dot_ox, m_dot_f, Pc, F, O_F, Isp] = engine_solver(P_ox, P_f, rho_ox, rho_f)
+    % MATLAB Function (engine_solver) - identical logic to the Simulink block.
+    % (the m_ox and m_f inputs of the block are not used inside it, so they are dropped here)
+    g0     = 9.81;          % m/s^2
+    c_star = 2639.4;        % m/s
+    A_t    = 7.85398e-5;    % m^2
+    A_e    = 1.8816e-3;     % m^2
+    C_f    = A_e / A_t;     % as written in the model
+
+    % initial guess [m_dot_ox (kg/s); m_dot_f (kg/s); Pc (Pa)]
+    x0 = [1.66337; 0.478249; 435.113 * 6894.76];
+
+    options = optimoptions('fsolve', ...
+        'Algorithm', 'levenberg-marquardt', ...
+        'Display', 'off', ...
+        'FunctionTolerance', 1e-6);
+
+    [x_sol, ~, exitflag] = fsolve(@(x) engine_residuals(x, P_ox, P_f, rho_ox, rho_f, A_t, c_star), x0, options);
+    if exitflag <= 0
+        x_sol = x0;         % fall back to the guess if fsolve fails
+    end
+
+    m_dot_ox = abs(x_sol(1));
+    m_dot_f  = abs(x_sol(2));
+    Pc       = abs(x_sol(3));
+
+    m_dot_tot = m_dot_ox + m_dot_f;
+    F    = C_f * Pc * A_t;
+    O_F  = m_dot_ox / max(m_dot_f, 1e-6);
+    Isp  = F / (max(m_dot_tot, 1e-6) * g0);
+end
+
+function R = engine_residuals(x, P_ox, P_f, rho_ox, rho_f, A_t, c_star)
+    m_dot_ox_guess = abs(x(1));
+    m_dot_f_guess  = abs(x(2));
+    Pc_guess       = abs(x(3));
+
+    %% Pressure-loss model
+
+    geom = vehicleGeometry();
+
+    % Current integration assumptions
+    fFixed = 0.04;       % assumed Darcy friction factor
+    roughness = 0;       % not used when fFixed is supplied
+    Cd = 1.0;            % reproduces old injector equation for now
+    dz = 0.9144;         % [m] existing model value
+
+
+    % ---- Oxidizer: two identical parallel branches ----
+
+    ox = parallelOxPressureLoss( ...
+        m_dot_ox_guess, ...
+        rho_ox, ...
+        NaN, ...                  % viscosity not needed with fixed f
+        geom.oxLeft.L, ...
+        geom.oxLeft.D, ...
+        roughness, ...
+        10, ...                   % K - existing model value
+        9, ...                    % Cv - existing model value
+        Cd, ...
+        2.20893e-5, ...           % total OX injector area [m^2]
+        dz, ...
+        fFixed=fFixed);
+
+    dp_ox = ox.dP_total;
+
+
+    % ---- Fuel: one branch ----
+
+    fuel = branchPressureLoss( ...
+        m_dot_f_guess, ...
+        rho_f, ...
+        NaN, ...                  % fixed-f for integration test
+        geom.fuel.L, ...
+        geom.fuel.D, ...
+        roughness, ...
+        10, ...                   % K - existing model value
+        5.228, ...                % Cv - existing model value
+        Cd, ...
+        1.8816e-3, ...            % injector area [m^2]
+        dz, ...
+        fFixed=fFixed);
+
+    dp_f = fuel.dP_total;
+
+    R_ox = P_ox - dp_ox - Pc_guess;
+    R_f  = P_f  - dp_f  - Pc_guess;
+    R_c  = (m_dot_ox_guess + m_dot_f_guess) - (Pc_guess * A_t / c_star);
+    R = [R_ox; R_f; R_c];
+
+    if any(~isfinite(R))
+        R = [1e6; 1e6; 1e6];
+    end
+end
+
+function dp = line_loss(m_dot, rho, D, L, k, Cv, A_inj)
+    % Merged calculate_line_loss_ox / calculate_line_loss_f (same math, different constants)
+    g0 = 9.81;
+    f  = 0.04;          % friction factor
+    dz = 0.9144;        % elevation change [m]
+    rho_safe = max(rho, 1e-3);
+
+    A_pipe = (pi/4) * D^2;
+    v = m_dot / (rho_safe * A_pipe);
+    q = 0.5 * rho_safe * v^2;
+
+    dp_pipe = f * (L/D) * q;                         % pipe loss
+    dp_k    = k * q;                                 % minor losses
+    SG      = rho_safe / 1000;                       % specific gravity
+    Q_gpm   = (m_dot / rho_safe) * 15850.32;         % m^3/s -> GPM
+    dp_v    = SG * (Q_gpm / Cv)^2 * 6894.76;         % valve loss [Pa]
+    dp_inj  = 0.5 * (m_dot / A_inj)^2 / rho_safe;    % injector loss
+    dp_g    = rho_safe * g0 * dz;                    % hydrostatic
+
+    dp = dp_pipe + dp_k + dp_v + dp_inj + dp_g;
+end
+

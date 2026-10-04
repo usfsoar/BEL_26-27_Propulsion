@@ -9,9 +9,9 @@ geom.oxRight.D = .430 * inch;
 geom.fuel.D = .305 * inch;
 
 %Unknown until CAD is available
-geom.oxLeft.L = NaN;
-geom.oxRight.L = NaN;
-geom.fuel.L = NaN;
+geom.oxLeft.L = .762; %assumptions of 30" pipe lengths
+geom.oxRight.L = .762;
+geom.fuel.L = .762;
 
 end
 

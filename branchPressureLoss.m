@@ -1,85 +1,78 @@
-%% branchPressureLoss
 
 function result = branchPressureLoss( ...
     mdot, rho, mu, L, D, roughness, ...
-    K, Cv, Cd, Ainj, dz)
+    K, Cv, Cd, Ainj, dz, options)
 % branchPressureLoss
-% Calculates total pressure loss through ONE feed-system branch.
+% Calculates total pressure loss through one complete feed branch.
 %
-% Total pressure change includes:
-%   - straight pipe friction
-%   - fitting/minor losses
-%   - valve loss
-%   - injector loss
-%   - gravity/elevation contribution
+% Includes:
+%   - straight pipe
+%   - fittings
+%   - valve
+%   - injector
+%   - gravity
 %
-% INPUTS:
-%   mdot      - mass flow rate [kg/s]
-%   rho       - fluid density [kg/m^3]
-%   mu        - dynamic viscosity [Pa*s]
-%   L         - pipe length [m]
-%   D         - pipe inner diameter [m]
-%   roughness - absolute pipe roughness [m]
-%   K         - total fitting loss coefficient [-]
-%   Cv        - valve flow coefficient [-]
-%   Cd        - injector discharge coefficient [-]
-%   Ainj      - injector flow area [m^2]
-%   dz        - elevation change, z_out - z_in [m]
+% Optional:
+%   fFixed = assumed Darcy friction factor
 %
-% OUTPUTS:
-%   result.dP_pipe
-%   result.dP_fitting
-%   result.dP_valve
-%   result.dP_injector
-%   result.dP_gravity
-%   result.dP_total
-%
-% Diagnostics:
-%   result.v
-%   result.Re
-%   result.f
-%   result.regime
+% If fFixed is supplied, pipePressureLoss does not require viscosity.
 
 arguments
-    mdot      (1,1) double {mustBeNonnegative, mustBeFinite}
-    rho       (1,1) double {mustBePositive, mustBeFinite}
-    mu        (1,1) double {mustBePositive, mustBeFinite}
-    L         (1,1) double {mustBeNonnegative, mustBeFinite}
-    D         (1,1) double {mustBePositive, mustBeFinite}
+    mdot (1,1) double {mustBeNonnegative, mustBeFinite}
+    rho (1,1) double {mustBePositive, mustBeFinite}
+
+    % Can be NaN when fixed friction factor is used
+    mu (1,1) double
+
+    L (1,1) double {mustBeNonnegative, mustBeFinite}
+    D (1,1) double {mustBePositive, mustBeFinite}
     roughness (1,1) double {mustBeNonnegative, mustBeFinite}
-    K         (1,1) double {mustBeNonnegative, mustBeFinite}
-    Cv        (1,1) double {mustBePositive, mustBeFinite}
-    Cd        (1,1) double {mustBePositive, mustBeFinite}
-    Ainj      (1,1) double {mustBePositive, mustBeFinite}
-    dz        (1,1) double {mustBeFinite}
+
+    K (1,1) double {mustBeNonnegative, mustBeFinite}
+    Cv (1,1) double {mustBePositive, mustBeFinite}
+    Cd (1,1) double {mustBePositive, mustBeFinite}
+    Ainj (1,1) double {mustBePositive, mustBeFinite}
+
+    dz (1,1) double {mustBeFinite}
+
+    options.fFixed (1,1) double = NaN
 end
 
-%% Pipe loss
-pipe = pipePressureLoss( ...
-    mdot, rho, mu, L, D, roughness);
 
-%% Fitting loss
+%% Pipe pressure loss
+
+pipe = pipePressureLoss( ...
+    mdot, rho, mu, L, D, roughness, ...
+    fFixed=options.fFixed);
+
+
+%% Fitting pressure loss
+
 fitting = fittingPressureLoss( ...
     K, rho, pipe.v);
 
-%% Valve loss
+
+%% Valve pressure loss
+
 valve = valvePressureLoss( ...
     mdot, rho, Cv);
 
-%% Injector loss
+
+%% Injector pressure loss
+
 injector = injectorPressureLoss( ...
     mdot, rho, Cd, Ainj);
 
-%% Gravity contribution
-g = 9.80665;             % [m/s^2]
 
-% Sign convention:
-% dz = z_out - z_in
-% dz > 0 means flow goes upward -> additional pressure loss
-% dz < 0 means flow goes downward -> gravity helps the flow
+%% Gravity pressure change
+
+g = 9.80665;      % [m/s^2]
+
 dP_gravity = rho * g * dz;
 
-%% Total
+
+%% Total branch pressure loss
+
 dP_total = ...
     pipe.dP + ...
     fitting.dP + ...
@@ -87,15 +80,17 @@ dP_total = ...
     injector.dP + ...
     dP_gravity;
 
+
 %% Outputs
+
 result.dP_pipe = pipe.dP;
 result.dP_fitting = fitting.dP;
 result.dP_valve = valve.dP;
 result.dP_injector = injector.dP;
 result.dP_gravity = dP_gravity;
+
 result.dP_total = dP_total;
 
-% Pipe diagnostics
 result.v = pipe.v;
 result.Re = pipe.Re;
 result.f = pipe.f;
