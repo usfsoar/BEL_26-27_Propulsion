@@ -10,7 +10,7 @@ from CoolProp.CoolProp import PropsSI
 
 # Simulation Settings
 dt = 0.01
-t_max = 1500
+t_max = 300
 RAE = 0.001
 i_max = 100
 
@@ -128,7 +128,7 @@ fueldens = m_fuel_initial / v_fuel_initial
 
 ###### sim here
 for i in range(1,(len(time_array))):
-    engine_solution = fn.enginesolve(m_ox_array[i-1], m_fuel_array[i-1], p_fuel_array[i-1], p_ox_array[i-1], PropsSI('D','U', u_ox_array[i-1]/m_ox_array[i-1], 'P', p_ox_array[i-1], 'N2O'), fueldens, T_ox_array[i-1], T_fuel_array[i-1], guess=None)
+    engine_solution = fn.enginesolve(m_ox_array[i-1], m_fuel_array[i-1], p_fuel_array[i-1], p_ox_array[i-1], PropsSI('D','T', T_ox_array[i-1], 'Q', 0, 'N2O'), fueldens, T_ox_array[i-1], T_fuel_array[i-1], guess=None)
     m_dot_ox_array[i] = engine_solution[0]
     m_dot_fuel_array[i] = engine_solution[1]
     chamber_pressure_array[i] = engine_solution[2]

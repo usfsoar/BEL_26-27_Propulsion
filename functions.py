@@ -104,7 +104,7 @@ def P_inj(P_tk: float, deltaP_line: float) -> float:
     return P_inj
 
 def deltaP_inj(mdot: float, C_d: float, A: float, rho: float) -> float:
-    deltaP_inj = - 0.5 * (mdot / (C_d * A))^2 / rho
+    deltaP_inj =  0.5 * (mdot / (C_d * A))**2 / rho
     return deltaP_inj
 
 # ----- Simulation -----
@@ -126,7 +126,7 @@ def R_m(mdot_OX: float, mdot_F: float, P_c, A_t, cstar) -> float:
 ### Here tons of constants needed -- listed below
 #### NOTE: this needs to be a lot more fleshed out and specific -- rn I am trying to make a place holder to keep making engine solver
 
-def line_loss(m_dot, rho, D, L, k, Cv, A_inj):
+def line_loss(m_dot, rho, D, L, k, Cv, A_inj, C_d_inj):
     dz = 0.9144 #### elevation change in m
     f = 0.04 ### darcy friction -- should be an input function but for simplicity leave it for rn
     # velocity and dynamic pressure
@@ -143,7 +143,8 @@ def line_loss(m_dot, rho, D, L, k, Cv, A_inj):
     Q_gpm = (m_dot / rho) * 15850.32   # m^3/s -> GPM
     dp_v = SG * (Q_gpm / Cv) ** 2 * 6894.76  # psi -> Pa
 
-    dp_inj = 0.5 * (m_dot / A_inj) ** 2 / rho  # injector loss
+     # injector loss
+    dp_inj = deltaP_inj(m_dot, C_d_inj, A_inj, rho)
     dp_g = rho * G0 * dz                       # hydrostatic loss
 
     return dp_pipe + dp_k + dp_v + dp_inj + dp_g
@@ -159,9 +160,9 @@ def enginesolve(m_ox, m_fuel, p_fuel, p_ox, rho_ox, rho_f, T_ox, T_fuel, guess=N
     #solve residuals
     ####NOTE: here I will input friction factors / other constants into the line_loss formula to get place holder values -- NEEDS more detail
     def deltap_line_ox(m_dot_ox, rho_ox): 
-        return line_loss(m_dot_ox, rho_ox, 0.0535088, 0.762, 10, 9, 2.20893e-5)
+        return line_loss(m_dot_ox, rho_ox, 0.0535088, 0.762, 10, 9, 4.4e-6, 0.7)
     def deltap_line_fuel(m_dot_fuel, rho_f):
-        return line_loss(m_dot_fuel, rho_f, 0.0535088, 0.762, 10, 5.228, 1.8816e-3)
+        return line_loss(m_dot_fuel, rho_f, 0.0535088, 0.762, 10, 5.228, 1.1e-6, 0.7)
     #### NOTE: DELTAPLINES ARE NOT FLESHED OUT -- COME BACK TO THIS
     ### fsolve mech here because sympy solver took too long
     def residuals(x):
