@@ -10,7 +10,7 @@ from CoolProp.CoolProp import PropsSI
 
 # Simulation Settings
 dt = 0.01
-t_max = 300
+t_max = 1500
 RAE = 0.001
 i_max = 100
 

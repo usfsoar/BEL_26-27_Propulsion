@@ -154,6 +154,7 @@ def enginesolve(m_ox, m_fuel, p_fuel, p_ox, rho_ox, rho_f, T_ox, T_fuel, guess=N
     A_t = 7.85398e-5         # m^2
     A_e = 1.8816e-3          # m^2
     C_f = 1.5          # thrust coefficient, no idea if accurate
+    g0 = 9.81                 # m/s^2
 
     #solve residuals
     ####NOTE: here I will input friction factors / other constants into the line_loss formula to get place holder values -- NEEDS more detail
@@ -181,6 +182,6 @@ def enginesolve(m_ox, m_fuel, p_fuel, p_ox, rho_ox, rho_f, T_ox, T_fuel, guess=N
     Pc = sol[2]
     thrust = C_f * Pc * A_t
     ox_fuel_ratio = m_dot_ox / m_dot_fuel
-    spec_impulse = thrust / (m_dot_fuel+m_dot_ox)
+    spec_impulse = thrust / ((m_dot_fuel+m_dot_ox)*g0)
 
     return (m_dot_ox, m_dot_fuel, Pc, thrust, ox_fuel_ratio, spec_impulse)
