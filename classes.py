@@ -25,51 +25,64 @@ class TankState:
 
 # Fluid Class
 class Fluid:
-    def __init__(self, name: str, REF: str):
+    def __init__(self, name: str, heos: str):
         self.name = name
-        self.REF = REF
-        self.RP = CP.AbstractState("REFPROP", self.REF)
+        self.heos = heos
+        self.heos = CP.AbstractState("HEOS", self.heos)
 
     def state_Ph(self, P: float, h: float) -> FluidState:
-        self.RP.update(CP.HmassP_INPUTS, h, P)
+        self.heos.update(CP.HmassP_INPUTS, h, P)
 
         return FluidState(
-            P = self.RP.p(),
-            T = self.RP.T(),
-            rho = self.RP.rhomass(),
-            u = self.RP.umass(),
-            h = self.RP.hmass(),
-            mu = self.RP.viscosity(),
-            x = self.RP.Q(),
-            phase = str(self.RP.phase())
+            P = self.heos.p(),
+            T = self.heos.T(),
+            rho = self.heos.rhomass(),
+            u = self.heos.umass(),
+            h = self.heos.hmass(),
+            mu = self.heos.viscosity(),
+            x = self.heos.Q(),
+            phase = str(self.heos.phase())
         )
 
     def state_PT(self, P: float, T: float) -> FluidState:
-        self.RP.update(CP.PT_INPUTS, P, T)
+        self.heos.update(CP.PT_INPUTS, P, T)
 
         return FluidState(
-            P = self.RP.p(),
-            T = self.RP.T(),
-            rho = self.RP.rhomass(),
-            u = self.RP.umass(),
-            h = self.RP.hmass(),
-            mu = self.RP.viscosity(),
-            x = self.RP.Q(),
-            phase = str(self.RP.phase())
+            P = self.heos.p(),
+            T = self.heos.T(),
+            rho = self.heos.rhomass(),
+            u = self.heos.umass(),
+            h = self.heos.hmass(),
+            mu = self.heos.viscosity(),
+            x = self.heos.Q(),
+            phase = str(self.heos.phase())
         )
+    def state_QT(self, Q: float, T: float) -> FluidState:
+            self.heos.update(CP.QT_INPUTS, Q, T)
+    
+            return FluidState(
+                P = self.heos.p(),
+                T = self.heos.T(),
+                rho = self.heos.rhomass(),
+                u = self.heos.umass(),
+                h = self.heos.hmass(),
+                mu = 99999999999,    #### cool prop cant get mu here so just put 99999999 to let it keep running and hopefully sound alarm bells Shouldnt matter bc we rn arent using it / never should use Q and T for viscosity
+                x = self.heos.Q(),
+                phase = str(self.heos.phase())
+            )
 
     def state_rhou(self, rho: float, u: float) -> FluidState:
-        self.RP.update(CP.DmassUmass_INPUTS, rho, u)
+        self.heos.update(CP.DmassUmass_INPUTS, rho, u)
 
         return FluidState(
-            P = self.RP.p(),
-            T = self.RP.T(),
-            rho = self.RP.rhomass(),
-            u = self.RP.umass(),
-            h = self.RP.hmass(),
-            mu = self.RP.viscosity(),
-            x = self.RP.Q(),
-            phase = str(self.RP.phase())
+            P = self.heos.p(),
+            T = self.heos.T(),
+            rho = self.heos.rhomass(),
+            u = self.heos.umass(),
+            h = self.heos.hmass(),
+            mu = self.heos.viscosity(),
+            x = self.heos.Q(),
+            phase = str(self.heos.phase())
         )
 
 # Tank Class
